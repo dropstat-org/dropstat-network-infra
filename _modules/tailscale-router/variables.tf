@@ -15,6 +15,11 @@ variable "advertise_routes" {
   default     = "10.0.0.0/8"
 }
 
+variable "headscale_url" {
+  description = "URL del servidor Headscale. e.g. https://1.2.3.4 o https://vpn.dropstat.com"
+  type        = string
+}
+
 variable "tags" {
   description = "Tags a aplicar a todos los recursos"
   type        = map(string)

@@ -169,7 +169,7 @@ resource "aws_launch_template" "tailscale" {
     echo 'net.ipv6.conf.all.forwarding = 1'  >> /etc/sysctl.d/99-tailscale.conf
     sysctl -p /etc/sysctl.d/99-tailscale.conf
 
-    # Instalar Tailscale
+    # Instalar Tailscale (cliente — compatible con Headscale)
     curl -fsSL https://tailscale.com/install.sh | sh
 
     # Obtener auth key desde Secrets Manager
@@ -180,10 +180,11 @@ resource "aws_launch_template" "tailscale" {
       --query SecretString \
       --output text)
 
-    # Registrar en Tailscale como subnet router
-    # hostname incluye AZ para distinguir las dos instancias en la consola
+    # Registrar en Headscale como subnet router
+    # --login-server apunta al servidor Headscale propio en vez de Tailscale SaaS
     AZ=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
     tailscale up \
+      --login-server="${var.headscale_url}" \
       --authkey="$AUTH_KEY" \
       --advertise-routes=${var.advertise_routes} \
       --accept-dns=false \
