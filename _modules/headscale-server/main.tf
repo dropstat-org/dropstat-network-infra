@@ -216,6 +216,8 @@ curl -fsSLo /usr/local/bin/headscale \
   "https://github.com/juanfont/headscale/releases/download/v$HEADSCALE_VERSION/headscale_$${HEADSCALE_VERSION}_linux_amd64"
 chmod +x /usr/local/bin/headscale
 
+useradd --system --no-create-home --shell /usr/sbin/nologin headscale 2>/dev/null || true
+
 cat > /etc/systemd/system/headscale.service << 'UNITEOF'
 [Unit]
 Description=headscale controller
@@ -223,8 +225,8 @@ After=network.target
 
 [Service]
 Type=simple
-DynamicUser=yes
-StateDirectory=headscale
+User=headscale
+Group=headscale
 ExecStart=/usr/local/bin/headscale serve
 Restart=always
 RestartSec=5
@@ -250,6 +252,7 @@ if ! blkid "$DEVICE" >/dev/null 2>&1; then
 fi
 grep -q "$DEVICE" /etc/fstab || echo "$DEVICE /var/lib/headscale ext4 defaults,nofail 0 2" >> /etc/fstab
 mount /var/lib/headscale
+chown -R headscale:headscale /var/lib/headscale
 
 cat > /etc/headscale/config.yaml << HSCFG
 server_url: https://$PUBLIC_IP
@@ -298,6 +301,7 @@ oidc:
     - dropstat.com
   strip_email_domain: false
 HSCFG
+chown -R headscale:headscale /etc/headscale
 
 # ── Instalar Caddy (reverse proxy HTTPS) ──────────────────────────────────
 curl -fsSLo /tmp/caddy.tar.gz \
