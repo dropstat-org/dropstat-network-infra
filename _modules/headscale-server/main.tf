@@ -44,6 +44,29 @@ resource "aws_eip_association" "headscale" {
   allocation_id = aws_eip.headscale.id
 }
 
+# ── EBS — almacenamiento persistente para /var/lib/headscale ────────────────
+# Sobrevive a la recreación de la instancia (user_data_replace_on_change).
+# DB sqlite + claves privadas de Headscale viven aquí.
+
+resource "aws_ebs_volume" "headscale_data" {
+  availability_zone = module.ec2.availability_zone
+  size               = 5
+  type               = "gp3"
+  encrypted          = true
+
+  tags = merge(local.tags, { Name = "${var.name}-headscale-data" })
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_volume_attachment" "headscale_data" {
+  device_name = "/dev/sdf"
+  volume_id   = aws_ebs_volume.headscale_data.id
+  instance_id = module.ec2.id
+}
+
 # ── Secrets Manager — OIDC client secret para Google SSO ─────────────────────
 # Cargar manualmente:
 #   aws secretsmanager put-secret-value \
@@ -215,6 +238,18 @@ UNITEOF
 PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
 
 mkdir -p /etc/headscale /var/lib/headscale
+
+# ── Montar volumen EBS persistente en /var/lib/headscale ─────────────────
+for i in $(seq 1 30); do
+  DEVICE=$(readlink -f /dev/sdf 2>/dev/null || readlink -f /dev/xvdf 2>/dev/null || true)
+  [ -n "$DEVICE" ] && [ -e "$DEVICE" ] && break
+  sleep 2
+done
+if ! blkid "$DEVICE" >/dev/null 2>&1; then
+  mkfs -t ext4 "$DEVICE"
+fi
+grep -q "$DEVICE" /etc/fstab || echo "$DEVICE /var/lib/headscale ext4 defaults,nofail 0 2" >> /etc/fstab
+mount /var/lib/headscale
 
 cat > /etc/headscale/config.yaml << HSCFG
 server_url: https://$PUBLIC_IP
