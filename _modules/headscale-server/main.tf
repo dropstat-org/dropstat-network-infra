@@ -193,8 +193,6 @@ module "ec2" {
       "https://github.com/juanfont/headscale/releases/download/v$HEADSCALE_VERSION/headscale_$${HEADSCALE_VERSION}_linux_amd64"
     chmod +x /usr/local/bin/headscale
 
-    useradd -r -m -d /var/lib/headscale -U headscale 2>/dev/null || true
-
     cat > /etc/systemd/system/headscale.service << 'UNITEOF'
 [Unit]
 Description=headscale controller
@@ -202,8 +200,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=headscale
-Group=headscale
+DynamicUser=yes
+StateDirectory=headscale
 ExecStart=/usr/local/bin/headscale serve
 Restart=always
 RestartSec=5
@@ -217,7 +215,6 @@ UNITEOF
     PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
 
     mkdir -p /etc/headscale /var/lib/headscale
-    chown -R headscale:headscale /etc/headscale /var/lib/headscale
 
     cat > /etc/headscale/config.yaml << HSCFG
 server_url: https://$PUBLIC_IP
