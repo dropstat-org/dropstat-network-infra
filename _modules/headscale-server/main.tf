@@ -174,26 +174,26 @@ module "ec2" {
   key_name = null  # sin key pair, solo SSM
 
   user_data = base64encode(<<-EOF
-    #!/bin/bash
-    set -e
+#!/bin/bash
+set -e
 
-    IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
-    REGION=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
+IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+REGION=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
 
-    # ── Obtener credenciales OIDC desde Secrets Manager ──────────────────────
-    OIDC_JSON=$(aws secretsmanager get-secret-value \
-      --secret-id ${aws_secretsmanager_secret.oidc.name} \
-      --region "$REGION" --query SecretString --output text 2>/dev/null || echo '{}')
-    OIDC_CLIENT_ID=$(echo "$OIDC_JSON"     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('client_id',''))")
-    OIDC_CLIENT_SECRET=$(echo "$OIDC_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('client_secret',''))")
+# ── Obtener credenciales OIDC desde Secrets Manager ──────────────────────
+OIDC_JSON=$(aws secretsmanager get-secret-value \
+  --secret-id ${aws_secretsmanager_secret.oidc.name} \
+  --region "$REGION" --query SecretString --output text 2>/dev/null || echo '{}')
+OIDC_CLIENT_ID=$(echo "$OIDC_JSON"     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('client_id',''))")
+OIDC_CLIENT_SECRET=$(echo "$OIDC_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('client_secret',''))")
 
-    # ── Instalar Headscale (binario — no hay paquete .rpm) ───────────────────
-    HEADSCALE_VERSION="0.23.0"
-    curl -fsSLo /usr/local/bin/headscale \
-      "https://github.com/juanfont/headscale/releases/download/v$HEADSCALE_VERSION/headscale_$${HEADSCALE_VERSION}_linux_amd64"
-    chmod +x /usr/local/bin/headscale
+# ── Instalar Headscale (binario — no hay paquete .rpm) ───────────────────
+HEADSCALE_VERSION="0.23.0"
+curl -fsSLo /usr/local/bin/headscale \
+  "https://github.com/juanfont/headscale/releases/download/v$HEADSCALE_VERSION/headscale_$${HEADSCALE_VERSION}_linux_amd64"
+chmod +x /usr/local/bin/headscale
 
-    cat > /etc/systemd/system/headscale.service << 'UNITEOF'
+cat > /etc/systemd/system/headscale.service << 'UNITEOF'
 [Unit]
 Description=headscale controller
 After=network.target
@@ -211,12 +211,12 @@ WorkingDirectory=/var/lib/headscale
 WantedBy=multi-user.target
 UNITEOF
 
-    # ── Configurar Headscale ──────────────────────────────────────────────────
-    PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
+# ── Configurar Headscale ──────────────────────────────────────────────────
+PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
 
-    mkdir -p /etc/headscale /var/lib/headscale
+mkdir -p /etc/headscale /var/lib/headscale
 
-    cat > /etc/headscale/config.yaml << HSCFG
+cat > /etc/headscale/config.yaml << HSCFG
 server_url: https://$PUBLIC_IP
 listen_addr: 0.0.0.0:8080
 metrics_listen_addr: 127.0.0.1:9090
@@ -264,31 +264,31 @@ oidc:
   strip_email_domain: false
 HSCFG
 
-    # ── Instalar Caddy (reverse proxy HTTPS) ──────────────────────────────────
-    dnf install -y 'dnf-command(copr)'
-    dnf copr enable -y @caddy/caddy
-    dnf install -y caddy 2>/dev/null || \
-      (curl -fsSLo /tmp/caddy.rpm \
-        "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.rpm" && \
-       rpm -i /tmp/caddy.rpm)
+# ── Instalar Caddy (reverse proxy HTTPS) ──────────────────────────────────
+dnf install -y 'dnf-command(copr)'
+dnf copr enable -y @caddy/caddy
+dnf install -y caddy 2>/dev/null || \
+  (curl -fsSLo /tmp/caddy.rpm \
+    "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.rpm" && \
+   rpm -i /tmp/caddy.rpm)
 
-    cat > /etc/caddy/Caddyfile << CADDYEOF
+cat > /etc/caddy/Caddyfile << CADDYEOF
 :443 {
   reverse_proxy localhost:8080
   tls internal
 }
 CADDYEOF
 
-    # ── Arrancar servicios ────────────────────────────────────────────────────
-    systemctl enable headscale caddy
-    systemctl start  headscale caddy
+# ── Arrancar servicios ────────────────────────────────────────────────────
+systemctl enable headscale caddy
+systemctl start  headscale caddy
 
-    # ── Crear usuario vpn por defecto ─────────────────────────────────────────
-    sleep 3
-    headscale users create vpn 2>/dev/null || true
+# ── Crear usuario vpn por defecto ─────────────────────────────────────────
+sleep 3
+headscale users create vpn 2>/dev/null || true
 
-    echo "Headscale ready at https://$PUBLIC_IP"
-  EOF
+echo "Headscale ready at https://$PUBLIC_IP"
+EOF
   )
 
   user_data_replace_on_change = true
