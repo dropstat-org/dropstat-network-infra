@@ -187,16 +187,37 @@ module "ec2" {
     OIDC_CLIENT_ID=$(echo "$OIDC_JSON"     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('client_id',''))")
     OIDC_CLIENT_SECRET=$(echo "$OIDC_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('client_secret',''))")
 
-    # ── Instalar Headscale ────────────────────────────────────────────────────
+    # ── Instalar Headscale (binario — no hay paquete .rpm) ───────────────────
     HEADSCALE_VERSION="0.23.0"
-    curl -fsSLo /tmp/headscale.rpm \
-      "https://github.com/juanfont/headscale/releases/download/v$HEADSCALE_VERSION/headscale_$${HEADSCALE_VERSION}_linux_amd64.rpm"
-    rpm -i /tmp/headscale.rpm
+    curl -fsSLo /usr/local/bin/headscale \
+      "https://github.com/juanfont/headscale/releases/download/v$HEADSCALE_VERSION/headscale_$${HEADSCALE_VERSION}_linux_amd64"
+    chmod +x /usr/local/bin/headscale
+
+    useradd -r -m -d /var/lib/headscale -U headscale 2>/dev/null || true
+
+    cat > /etc/systemd/system/headscale.service << 'UNITEOF'
+[Unit]
+Description=headscale controller
+After=network.target
+
+[Service]
+Type=simple
+User=headscale
+Group=headscale
+ExecStart=/usr/local/bin/headscale serve
+Restart=always
+RestartSec=5
+WorkingDirectory=/var/lib/headscale
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
 
     # ── Configurar Headscale ──────────────────────────────────────────────────
     PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
 
     mkdir -p /etc/headscale /var/lib/headscale
+    chown -R headscale:headscale /etc/headscale /var/lib/headscale
 
     cat > /etc/headscale/config.yaml << HSCFG
 server_url: https://$PUBLIC_IP
