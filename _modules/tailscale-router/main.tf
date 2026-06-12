@@ -211,7 +211,7 @@ resource "aws_launch_template" "tailscale" {
   tags = local.tags
 }
 
-# ── Auto Scaling Group — min=2 max=2, una instancia por AZ ───────────────────
+# ── Auto Scaling Group — min=1 max=1 ──────────────────────────────────────────
 
 module "asg" {
   source  = "terraform-aws-modules/autoscaling/aws"
@@ -219,10 +219,10 @@ module "asg" {
 
   name = "${var.name}-tailscale-router"
 
-  # Fixed size — siempre 2 instancias, sin scaling dinámico
-  min_size         = 2
-  max_size         = 2
-  desired_capacity = 2
+  # Fixed size — 1 instancia, sin scaling dinámico
+  min_size         = 1
+  max_size         = 1
+  desired_capacity = 1
 
   # Una instancia por AZ para HA real
   vpc_zone_identifier = local.network_subnet_ids
