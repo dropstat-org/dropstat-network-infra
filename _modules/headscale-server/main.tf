@@ -32,6 +32,10 @@ locals {
   public_subnet_ids = [for s in module.account.subnets.publics : s.id]
 }
 
+data "aws_subnet" "headscale" {
+  id = local.public_subnet_ids[0]
+}
+
 # ── Elastic IP — IP pública estable ──────────────────────────────────────────
 
 resource "aws_eip" "headscale" {
@@ -49,7 +53,7 @@ resource "aws_eip_association" "headscale" {
 # DB sqlite + claves privadas de Headscale viven aquí.
 
 resource "aws_ebs_volume" "headscale_data" {
-  availability_zone = module.ec2.availability_zone
+  availability_zone = data.aws_subnet.headscale.availability_zone
   size               = 5
   type               = "gp3"
   encrypted          = true
