@@ -25,7 +25,7 @@ locals {
   tags = merge(var.tags, { Module = "tailscale-router" })
 
   # Subnets de red (tgw-attachment) — una por AZ para HA
-  network_subnet_ids = [for s in module.account.subnets.networks : s.id]
+  network_subnet_ids = [for s in module.account.subnets.secures : s.id]
 }
 
 # ── Secrets Manager — Tailscale auth key ──────────────────────────────────────

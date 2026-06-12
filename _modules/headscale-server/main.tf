@@ -159,7 +159,7 @@ data "aws_ami" "al2023" {
 
 module "ec2" {
   source  = "terraform-aws-modules/ec2-instance/aws"
-  version = "~> 5.0"
+  version = "~> 6.0"
 
   name          = "${var.name}-headscale-server"
   instance_type = var.instance_type
