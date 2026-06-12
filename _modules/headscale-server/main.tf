@@ -177,7 +177,8 @@ module "ec2" {
     #!/bin/bash
     set -e
 
-    REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+    IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+    REGION=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
 
     # ── Obtener credenciales OIDC desde Secrets Manager ──────────────────────
     OIDC_JSON=$(aws secretsmanager get-secret-value \
@@ -193,7 +194,7 @@ module "ec2" {
     rpm -i /tmp/headscale.rpm
 
     # ── Configurar Headscale ──────────────────────────────────────────────────
-    PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+    PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
 
     mkdir -p /etc/headscale /var/lib/headscale
 

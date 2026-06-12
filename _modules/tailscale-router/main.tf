@@ -173,7 +173,8 @@ resource "aws_launch_template" "tailscale" {
     curl -fsSL https://tailscale.com/install.sh | sh
 
     # Obtener auth key desde Secrets Manager
-    REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+    IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+    REGION=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
     AUTH_KEY=$(aws secretsmanager get-secret-value \
       --secret-id ${aws_secretsmanager_secret.authkey.name} \
       --region "$REGION" \
@@ -182,7 +183,7 @@ resource "aws_launch_template" "tailscale" {
 
     # Registrar en Headscale como subnet router
     # --login-server apunta al servidor Headscale propio en vez de Tailscale SaaS
-    AZ=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
+    AZ=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
     tailscale up \
       --login-server="${var.headscale_url}" \
       --authkey="$AUTH_KEY" \
