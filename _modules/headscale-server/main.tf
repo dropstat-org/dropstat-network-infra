@@ -64,7 +64,7 @@ module "sg" {
   version = "~> 5.0"
 
   name        = "${var.name}-headscale-server"
-  description = "Headscale control plane — HTTPS inbound + WireGuard UDP"
+  description = "Headscale control plane - HTTPS inbound + WireGuard UDP"
   vpc_id      = module.account.vpc.id
 
   ingress_with_cidr_blocks = [
@@ -73,14 +73,14 @@ module "sg" {
       to_port     = 443
       protocol    = "tcp"
       cidr_blocks = "0.0.0.0/0"
-      description = "HTTPS — Tailscale clients + web UI"
+      description = "HTTPS - Tailscale clients + web UI"
     },
     {
       from_port   = 3478
       to_port     = 3478
       protocol    = "udp"
       cidr_blocks = "0.0.0.0/0"
-      description = "STUN — NAT traversal para WireGuard"
+      description = "STUN - NAT traversal para WireGuard"
     },
   ]
 
