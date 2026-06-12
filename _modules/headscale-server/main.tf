@@ -265,12 +265,28 @@ oidc:
 HSCFG
 
 # ── Instalar Caddy (reverse proxy HTTPS) ──────────────────────────────────
-dnf install -y 'dnf-command(copr)'
-dnf copr enable -y @caddy/caddy
-dnf install -y caddy 2>/dev/null || \
-  (curl -fsSLo /tmp/caddy.rpm \
-    "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.rpm" && \
-   rpm -i /tmp/caddy.rpm)
+curl -fsSLo /tmp/caddy.tar.gz \
+  "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.tar.gz"
+tar -xzf /tmp/caddy.tar.gz -C /usr/local/bin caddy
+chmod +x /usr/local/bin/caddy
+
+cat > /etc/systemd/system/caddy.service << 'CADDYUNITEOF'
+[Unit]
+Description=Caddy
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+CADDYUNITEOF
+
+mkdir -p /etc/caddy
 
 cat > /etc/caddy/Caddyfile << CADDYEOF
 :443 {
