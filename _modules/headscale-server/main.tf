@@ -231,6 +231,7 @@ After=network.target
 Type=simple
 User=headscale
 Group=headscale
+RuntimeDirectory=headscale
 ExecStart=/usr/local/bin/headscale serve
 Restart=always
 RestartSec=5
