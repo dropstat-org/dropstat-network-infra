@@ -106,18 +106,18 @@ module "sg" {
       description = "HTTPS - Tailscale clients + web UI"
     },
     {
-      from_port   = 80
-      to_port     = 80
-      protocol    = "tcp"
-      cidr_blocks = "0.0.0.0/0"
-      description = "HTTP - Lets Encrypt ACME HTTP-01 challenge"
-    },
-    {
       from_port   = 3478
       to_port     = 3478
       protocol    = "udp"
       cidr_blocks = "0.0.0.0/0"
       description = "STUN - NAT traversal para WireGuard"
+    },
+    {
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = "0.0.0.0/0"
+      description = "HTTP - Lets Encrypt ACME HTTP-01 challenge"
     },
   ]
 
