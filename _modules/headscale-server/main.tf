@@ -269,8 +269,9 @@ private_key_path: /var/lib/headscale/private.key
 noise:
   private_key_path: /var/lib/headscale/noise_private.key
 
-ip_prefixes:
-  - 100.64.0.0/10
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
 
 derp:
   server:
@@ -289,11 +290,12 @@ database:
 log:
   level: info
 
-dns_config:
+dns:
   magic_dns: true
   base_domain: vpn.dropstat.internal
   nameservers:
-    - 1.1.1.1
+    global:
+      - 1.1.1.1
 
 oidc:
   only_start_if_oidc_is_available: false
