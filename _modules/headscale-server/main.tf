@@ -110,7 +110,7 @@ module "sg" {
       to_port     = 80
       protocol    = "tcp"
       cidr_blocks = "0.0.0.0/0"
-      description = "HTTP - Let's Encrypt ACME HTTP-01 challenge"
+      description = "HTTP - Lets Encrypt ACME HTTP-01 challenge"
     },
     {
       from_port   = 3478
