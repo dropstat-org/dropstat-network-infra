@@ -5,7 +5,7 @@ output "public_ip" {
 
 output "server_url" {
   description = "URL completa del servidor Headscale"
-  value       = "https://${aws_eip.headscale.public_ip}"
+  value       = "https://${local.fqdn}"
 }
 
 output "instance_id" {

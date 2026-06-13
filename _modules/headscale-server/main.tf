@@ -30,6 +30,9 @@ module "account" {
 locals {
   tags = merge(var.tags, { Module = "headscale-server" })
   public_subnet_ids = [for s in module.account.subnets.publics : s.id]
+  # nip.io resuelve <ip>.nip.io -> <ip>, permite a Caddy obtener un cert
+  # real de Let's Encrypt (ver docs/tls-nip-io-fix.md)
+  fqdn = "${aws_eip.headscale.public_ip}.nip.io"
 }
 
 data "aws_subnet" "headscale" {
@@ -101,6 +104,13 @@ module "sg" {
       protocol    = "tcp"
       cidr_blocks = "0.0.0.0/0"
       description = "HTTPS - Tailscale clients + web UI"
+    },
+    {
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = "0.0.0.0/0"
+      description = "HTTP - Let's Encrypt ACME HTTP-01 challenge"
     },
     {
       from_port   = 3478
@@ -260,7 +270,7 @@ mount /var/lib/headscale
 chown -R headscale:headscale /var/lib/headscale
 
 cat > /etc/headscale/config.yaml << HSCFG
-server_url: https://$PUBLIC_IP
+server_url: https://${local.fqdn}
 listen_addr: 0.0.0.0:8080
 metrics_listen_addr: 127.0.0.1:9090
 grpc_listen_addr: 0.0.0.0:50443
@@ -335,9 +345,8 @@ CADDYUNITEOF
 mkdir -p /etc/caddy
 
 cat > /etc/caddy/Caddyfile << CADDYEOF
-:443 {
+${local.fqdn} {
   reverse_proxy localhost:8080
-  tls internal
 }
 CADDYEOF
 
