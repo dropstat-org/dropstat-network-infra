@@ -119,6 +119,13 @@ module "sg" {
       cidr_blocks = "0.0.0.0/0"
       description = "HTTP - Lets Encrypt ACME HTTP-01 challenge"
     },
+    {
+      from_port   = -1
+      to_port     = -1
+      protocol    = "icmp"
+      cidr_blocks = "100.64.0.0/10"
+      description = "ICMP from Tailscale clients for connectivity testing"
+    },
   ]
 
   egress_with_cidr_blocks = [
