@@ -74,17 +74,22 @@ resource "aws_volume_attachment" "headscale_data" {
   instance_id = module.ec2.id
 }
 
-# ── Secrets Manager — OIDC client secret para Google SSO ─────────────────────
-# Cargar manualmente:
-#   aws secretsmanager put-secret-value \
-#     --secret-id <secret_name> \
-#     --secret-string '{"client_id":"xxx","client_secret":"yyy"}'
+# ── Secrets Manager — OIDC client secret (Cognito broker, dropstat-aws-sso) ──
+# Creado y poblado por dropstat-secrets-config (live/network/secrets), no aquí —
+# evita que dos states distintos disputen el mismo nombre de secreto. El
+# `removed` block libera este resource del state de este módulo SIN destruir
+# el secreto físico (ya adoptado/importado por secrets-config).
 
-resource "aws_secretsmanager_secret" "oidc" {
-  name                    = "${var.name}/headscale/oidc"
-  description             = "Google OIDC credentials for Headscale SSO"
-  recovery_window_in_days = 0
-  tags                    = local.tags
+removed {
+  from = aws_secretsmanager_secret.oidc
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+data "aws_secretsmanager_secret" "oidc" {
+  name = "${var.name}/headscale/oidc"
 }
 
 # ── Security group ────────────────────────────────────────────────────────────
@@ -173,7 +178,7 @@ resource "aws_iam_role_policy" "secrets" {
     Statement = [{
       Effect   = "Allow"
       Action   = "secretsmanager:GetSecretValue"
-      Resource = aws_secretsmanager_secret.oidc.arn
+      Resource = data.aws_secretsmanager_secret.oidc.arn
     }]
   })
 }
@@ -226,7 +231,7 @@ REGION=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.2
 
 # ── Obtener credenciales OIDC desde Secrets Manager ──────────────────────
 OIDC_JSON=$(aws secretsmanager get-secret-value \
-  --secret-id ${aws_secretsmanager_secret.oidc.name} \
+  --secret-id ${data.aws_secretsmanager_secret.oidc.name} \
   --region "$REGION" --query SecretString --output text 2>/dev/null || echo '{}')
 OIDC_CLIENT_ID=$(echo "$OIDC_JSON"     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('client_id',''))")
 OIDC_CLIENT_SECRET=$(echo "$OIDC_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('client_secret',''))")
@@ -317,7 +322,7 @@ dns:
 
 oidc:
   only_start_if_oidc_is_available: false
-  issuer: https://accounts.google.com
+  issuer: https://cognito-idp.us-east-2.amazonaws.com/us-east-2_YzFtEJry5
   client_id: $OIDC_CLIENT_ID
   client_secret: $OIDC_CLIENT_SECRET
   scope: [openid, profile, email]
