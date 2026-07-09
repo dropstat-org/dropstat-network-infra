@@ -14,11 +14,11 @@ output "instance_id" {
 }
 
 output "oidc_secret_name" {
-  description = "Nombre del secret para las credenciales OIDC de Google"
-  value       = aws_secretsmanager_secret.oidc.name
+  description = "Nombre del secret con las credenciales OIDC (gestionado por dropstat-secrets-config)"
+  value       = data.aws_secretsmanager_secret.oidc.name
 }
 
 output "oidc_secret_arn" {
   description = "ARN del secret OIDC"
-  value       = aws_secretsmanager_secret.oidc.arn
+  value       = data.aws_secretsmanager_secret.oidc.arn
 }
