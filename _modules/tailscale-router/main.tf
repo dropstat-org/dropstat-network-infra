@@ -5,27 +5,45 @@
 # cuentas AWS via Transit Gateway.
 #
 # Arquitectura:
-#   ASG min=2 max=2, una instancia por AZ (us-east-2a/2b)
-#   Anuncia 10.0.0.0/8 → cubre dev, staging, prod, shared-services
-#   Tailscale hace failover automático entre las dos instancias
+#   ASG min=1 max=1 — NO hay HA hoy. Una sola instancia: si se cae, se pierde
+#   el acceso hasta que el ASG la reponga. Subirlo a min=2/max=2 (una por AZ)
+#   da failover real, Tailscale elige entre routers que anuncian lo mismo.
+#   advertise_routes decide el alcance; ver la variable.
 #
 # Auth: Tailscale auth key en Secrets Manager (reusable, sin expiración)
 # Acceso: SSM Session Manager — sin key pair, sin SSH, sin inbound
 #
 # Post-apply:
 #   1. Cargar auth key: aws secretsmanager put-secret-value --secret-id <name> --secret-string "tskey-auth-XXX"
-#   2. Aprobar rutas en admin.tailscale.com → Routes → 10.0.0.0/8 → Enable
+#   2. Aprobar rutas en el Headscale propio (no en admin.tailscale.com):
+#      headscale routes list && headscale routes enable -r <route-id>
 # ============================================================
 
+# tm-aws-account-data resuelve SIEMPRE la cuenta network. Solo se consulta
+# cuando no se pasa var.vpc_id, para que el modulo sirva en otras cuentas.
 module "account" {
+  count  = var.vpc_id == null ? 1 : 0
   source = "git::https://github.com/dropstat-org/tm-aws-account-data.git?ref=master"
+}
+
+# El router existente en la cuenta network tiene module.account sin count en el
+# state. Sin esto, agregar count lo veria como destroy + create.
+moved {
+  from = module.account
+  to   = module.account[0]
 }
 
 locals {
   tags = merge(var.tags, { Module = "tailscale-router" })
 
-  # Subnets de red (tgw-attachment) — una por AZ para HA
-  network_subnet_ids = [for s in module.account.subnets.secures : s.id]
+  # one() devuelve null cuando count = 0, y try() evita que la rama no usada del
+  # condicional explote al recorrer ese null.
+  account = one(module.account)
+
+  vpc_id = coalesce(var.vpc_id, try(local.account.vpc.id, ""))
+
+  # Subnets del ASG — una por AZ
+  network_subnet_ids = length(var.subnet_ids) > 0 ? var.subnet_ids : try([for s in local.account.subnets.secures : s.id], [])
 }
 
 # ── Secrets Manager — Tailscale auth key ──────────────────────────────────────
@@ -94,31 +112,35 @@ module "sg" {
 
   name        = "${var.name}-tailscale-router"
   description = "Tailscale subnet router - outbound only"
-  vpc_id      = module.account.vpc.id
+  vpc_id      = local.vpc_id
 
-  egress_with_cidr_blocks = [
-    {
-      from_port   = 41641
-      to_port     = 41641
-      protocol    = "udp"
-      cidr_blocks = "0.0.0.0/0"
-      description = "Tailscale WireGuard UDP"
-    },
-    {
-      from_port   = 443
-      to_port     = 443
-      protocol    = "tcp"
-      cidr_blocks = "0.0.0.0/0"
-      description = "Tailscale control plane HTTPS"
-    },
-    {
-      from_port   = 0
-      to_port     = 0
-      protocol    = "-1"
-      cidr_blocks = "10.0.0.0/8"
-      description = "Forward packets to all workload accounts via TGW"
-    },
-  ]
+  egress_with_cidr_blocks = concat(
+    [
+      {
+        from_port   = 41641
+        to_port     = 41641
+        protocol    = "udp"
+        cidr_blocks = "0.0.0.0/0"
+        description = "Tailscale WireGuard UDP"
+      },
+      {
+        from_port   = 443
+        to_port     = 443
+        protocol    = "tcp"
+        cidr_blocks = "0.0.0.0/0"
+        description = "Tailscale control plane HTTPS"
+      },
+    ],
+    [
+      for c in var.forward_cidrs : {
+        from_port   = 0
+        to_port     = 0
+        protocol    = "-1"
+        cidr_blocks = c
+        description = "Forward packets to ${c}"
+      }
+    ],
+  )
 
   tags = local.tags
 }

@@ -12,15 +12,29 @@
 #   - SQLite (base de datos embebida, simple para <50 usuarios)
 #   - Elastic IP (IP pública estable)
 #
+# Identidad y ACL:
+#   Login por OIDC contra Cognito `dropstat-sso` (us-east-2_YzFtEJry5), que
+#   federa Identity Center por SAML. Con strip_email_domain=false el usuario de
+#   Headscale ES el email, y eso es lo que referencian las ACL.
+#   El mapping SAML trae solo {email, username}: NO trae grupos de Identity
+#   Center, asi que `group:devops` se declara en var.devops_members.
+#   Con enforce_oidc=true no se crea el usuario compartido `vpn`: un nodo
+#   registrado con preauth key no tiene identidad y ninguna ACL lo alcanza.
+#
 # Post-apply:
-#   1. Aprobar el subnet router:
+#   1. Validar la policy antes de confiar en ella:
 #      aws ssm start-session --target <instance-id>
-#      headscale nodes register --user vpn --key <node-key>
-#   2. Aprobar rutas del router:
+#      headscale policy check --file /etc/headscale/acl.hujson
+#   2. Aprobar rutas de cada subnet router:
+#      headscale routes list
 #      headscale routes enable -r <route-id>
-#   3. Agregar usuarios:
-#      headscale users create <email>
-#      headscale --user <email> preauthkeys create --reusable --expiration 1h
+#   3. Cada persona entra con `tailscale up --login-server=<url>` y completa
+#      el login en el navegador. No hay que crear usuarios a mano.
+#
+# OJO: user_data_replace_on_change = true. Tocar la ACL o el config RECREA la
+# instancia. La db.sqlite vive en un EBS aparte y sobrevive, pero hay unos
+# minutos sin control plane: los nodos ya conectados siguen (WireGuard es
+# peer-to-peer), los logins nuevos fallan.
 # ============================================================
 
 module "account" {
@@ -33,6 +47,36 @@ locals {
   # nip.io resuelve <ip>.nip.io -> <ip>, permite a Caddy obtener un cert
   # real de Let's Encrypt (ver docs/tls-nip-io-fix.md)
   fqdn = "${aws_eip.headscale.public_ip}.nip.io"
+  # ── ACL policy (HuJSON) ─────────────────────────────────────────────────────
+  # Default-deny: Headscale niega todo lo que no se acepte explicitamente.
+  # Sin este archivo Headscale corre allow-all y cualquier nodo alcanza todo lo
+  # que los subnet routers anuncien.
+  acl_policy = jsonencode({
+    groups = {
+      "group:devops" = var.devops_members
+    }
+    acls = concat(
+      # prod: solo devops
+      length(var.prod_cidrs) > 0 ? [{
+        action = "accept"
+        src    = ["group:devops"]
+        dst    = [for c in var.prod_cidrs : "${c}:*"]
+      }] : [],
+      # no-prod: cualquier usuario autenticado
+      length(var.nonprod_cidrs) > 0 ? [{
+        action = "accept"
+        src    = ["*"]
+        dst    = [for c in var.nonprod_cidrs : "${c}:*"]
+      }] : [],
+      # malla entre nodos de la propia VPN (100.64.0.0/10)
+      [{
+        action = "accept"
+        src    = ["*"]
+        dst    = ["100.64.0.0/10:*"]
+      }],
+    )
+  })
+
 }
 
 data "aws_subnet" "headscale" {
@@ -320,8 +364,12 @@ dns:
     global:
       - 1.1.1.1
 
+policy:
+  mode: file
+  path: /etc/headscale/acl.hujson
+
 oidc:
-  only_start_if_oidc_is_available: false
+  only_start_if_oidc_is_available: ${var.enforce_oidc}
   issuer: https://cognito-idp.us-east-2.amazonaws.com/us-east-2_YzFtEJry5
   client_id: $OIDC_CLIENT_ID
   client_secret: $OIDC_CLIENT_SECRET
@@ -330,6 +378,12 @@ oidc:
     - dropstat.com
   strip_email_domain: false
 HSCFG
+
+# ── ACL policy ────────────────────────────────────────────
+cat > /etc/headscale/acl.hujson << 'ACLEOF'
+${local.acl_policy}
+ACLEOF
+
 chown -R headscale:headscale /etc/headscale
 
 # ── Instalar Caddy (reverse proxy HTTPS) ──────────────────────────────────
@@ -366,9 +420,19 @@ CADDYEOF
 systemctl enable headscale caddy
 systemctl start  headscale caddy
 
-# ── Crear usuario vpn por defecto ─────────────────────────────────────────
+# ── Usuarios ───────────────────────────────────────────────
 sleep 3
+
+# `routers` ─ los subnet routers no pueden entrar por OIDC: son EC2 y se
+# registran con preauth key. Este usuario existe siempre, y la ACL no le da
+# ningun src (solo anuncia rutas, no inicia trafico).
+headscale users create ${var.router_user} 2>/dev/null || true
+
+# `vpn` ─ usuario humano compartido, sin identidad individual. Con
+# enforce_oidc = true no se crea: cada persona entra por OIDC con su email.
+%{ if !var.enforce_oidc ~}
 headscale users create vpn 2>/dev/null || true
+%{ endif ~}
 
 echo "Headscale ready at https://$PUBLIC_IP"
 EOF
