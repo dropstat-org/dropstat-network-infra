@@ -50,11 +50,6 @@ variable "subnet_ids" {
   DESC
   type        = list(string)
   default     = []
-
-  validation {
-    condition     = var.vpc_id == null || length(var.subnet_ids) > 0
-    error_message = "Si se pasa vpc_id hay que pasar subnet_ids: tm-aws-account-data no se consulta y no hay de donde sacarlas."
-  }
 }
 
 variable "forward_cidrs" {
