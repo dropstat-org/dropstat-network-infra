@@ -179,6 +179,13 @@ resource "aws_launch_template" "tailscale" {
     delete_on_termination       = true
   }
 
+  # IMDSv2 obligatorio — IMDSv1 permite leer credenciales del rol via SSRF
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
+
   # Sin key pair — acceso exclusivamente via SSM
   key_name = null
 
