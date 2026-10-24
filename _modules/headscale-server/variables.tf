@@ -22,8 +22,15 @@ variable "tags" {
 
 variable "devops_members" {
   description = <<-DESC
-    Emails de quienes pueden alcanzar prod_cidrs. Son los usuarios de Headscale:
-    con OIDC y strip_email_domain=false, el usuario ES el email.
+    Emails de quienes pueden alcanzar prod_cidrs. Se traducen al nombre de
+    usuario de Headscale reemplazando la @ por punto (ver local.devops_users):
+    con strip_email_domain=false el usuario NO es el email, es
+    randy.goz.dropstat.com. El grupo matchea por nombre y en v0.23 la tabla
+    users no guarda email.
+
+    Cada persona tiene que haber entrado al menos una vez por OIDC para que el
+    usuario exista; si no, su entrada del grupo no matchea nada.
+
     El mapping SAML del IdP solo trae {email, username}, no grupos de Identity
     Center, asi que la membresia se declara aqui y no se hereda.
   DESC
