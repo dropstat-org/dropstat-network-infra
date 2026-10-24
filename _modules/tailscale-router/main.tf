@@ -42,11 +42,6 @@ locals {
 
   vpc_id = coalesce(var.vpc_id, try(local.account.vpc.id, ""))
 
-  # Si se pasa vpc_id no se consulta tm-aws-account-data, asi que subnet_ids es
-  # obligatorio. La validacion cruzada entre variables necesita Terraform >= 1.9,
-  # asi que se comprueba aqui.
-  _subnets_required = var.vpc_id != null && length(var.subnet_ids) == 0 ? tobool("Si se pasa vpc_id hay que pasar subnet_ids: tm-aws-account-data no se consulta y no hay de donde sacarlas.") : true
-
   # Subnets del ASG — una por AZ
   network_subnet_ids = length(var.subnet_ids) > 0 ? var.subnet_ids : try([for s in local.account.subnets.secures : s.id], [])
 }

@@ -47,6 +47,9 @@ variable "subnet_ids" {
     Subnets del ASG. Vacio = las 'secures' de tm-aws-account-data.
     Deben tener salida a internet (NAT): el launch template no asigna IP publica,
     asi que una subnet con solo IGW no sirve.
+
+    OBLIGATORIO si se pasa vpc_id: en ese caso no se consulta
+    tm-aws-account-data y no hay de donde sacarlas.
   DESC
   type        = list(string)
   default     = []
