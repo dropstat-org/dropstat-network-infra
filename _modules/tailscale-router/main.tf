@@ -17,8 +17,11 @@
 #   pega un sufijo random -- y el flag Primary de la ruta se queda en el nodo
 #   caido, sin failover automatico: hay que moverlo a mano con
 #   `headscale routes disable -r <id>` sobre la ruta vieja. Con --ephemeral el
-#   nodo se borra solo al desconectar (ephemeral_node_inactivity_timeout en la
-#   config del server) y el Primary pasa al nodo vivo sin intervencion.
+#   nodo se borra al desconectar y el Primary pasa al nodo vivo solo, pero NO
+#   al instante: el server espera ephemeral_node_inactivity_timeout (30m) y
+#   durante esa ventana el nodo muerto sigue siendo Primary. Por eso el
+#   user_data instala tailscale-logout.service, que da de baja el nodo en el
+#   apagado y deja el timeout solo como backstop.
 # Acceso: SSM Session Manager - sin key pair, sin SSH, sin inbound
 #
 # Post-apply:
@@ -275,6 +278,37 @@ resource "aws_launch_template" "tailscale" {
       --advertise-routes=${var.advertise_routes} \
       --accept-dns=false \
       --hostname="${var.name}-router-$AZ"
+
+    # Baja limpia al apagar. Sin esto el nodo se queda colgado y Headscale
+    # recien lo borra al cumplirse ephemeral_node_inactivity_timeout (30m en
+    # la config del server) -- y mientras existe se queda con el flag Primary
+    # de las rutas, asi que cada reemplazo de instancia da hasta media hora de
+    # VPN muerta sin que nadie haya hecho nada mal.
+    #
+    # El orden importa: Requires + After sobre tailscaled hace que en el
+    # apagado esta unit pare ANTES que tailscaled, con la red todavia viva.
+    #
+    # No cubre una terminacion sucia (falla de hardware, stop --force): ahi no
+    # corre el shutdown y el backstop sigue siendo el timeout de 30m.
+    cat > /etc/systemd/system/tailscale-logout.service <<'UNIT'
+    [Unit]
+    Description=Deregister ephemeral Headscale node on shutdown
+    Requires=tailscaled.service
+    After=tailscaled.service network-online.target
+
+    [Service]
+    Type=oneshot
+    RemainAfterExit=yes
+    ExecStart=/bin/true
+    ExecStop=/usr/bin/tailscale logout
+    TimeoutStopSec=30
+
+    [Install]
+    WantedBy=multi-user.target
+    UNIT
+
+    systemctl daemon-reload
+    systemctl enable --now tailscale-logout.service
 
     systemctl enable tailscaled
   EOF
