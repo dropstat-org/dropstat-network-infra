@@ -272,16 +272,28 @@ module "asg" {
   # Una instancia por AZ para HA real
   vpc_zone_identifier = local.network_subnet_ids
 
-  # Launch template gestionado arriba
-  create_launch_template = false
-  launch_template_id     = aws_launch_template.tailscale.id
-  launch_template_version = "$Latest"
+  # Launch template gestionado arriba.
+  # Version explicita, NO "$Latest": con "$Latest" el recurso del ASG no cambia
+  # cuando se edita el user_data, asi que terraform no tiene nada que
+  # actualizar y el instance_refresh de abajo no se dispara nunca. El apply
+  # publica la version nueva del launch template y no la rueda: la instancia
+  # vieja sigue corriendo el user_data anterior hasta que alguien la termina a
+  # mano. Pasó el 2026-10-25 con el fix de swap (LT v10 publicada, cero
+  # refreshes en el historial del ASG).
+  create_launch_template  = false
+  launch_template_id      = aws_launch_template.tailscale.id
+  launch_template_version = aws_launch_template.tailscale.latest_version
 
-  # Instance refresh — rolling update cuando cambia el launch template
+  # Instance refresh — rolling update cuando cambia el launch template.
+  # Con min=max=1 no hay forma de mantener una instancia arriba durante el
+  # reemplazo: el refresh termina la unica que hay y espera la nueva, o sea
+  # ~2 min sin VPN. Es el precio de que el cambio se despliegue solo; subir a
+  # min=2/max=2 (una por AZ) lo elimina.
   instance_refresh = {
     strategy = "Rolling"
     preferences = {
-      min_healthy_percentage = 50   # mantiene 1 instancia up durante el update
+      min_healthy_percentage = 0
+      instance_warmup        = 120
     }
   }
 
