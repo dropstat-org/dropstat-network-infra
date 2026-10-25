@@ -51,9 +51,16 @@ locals {
   # Default-deny: Headscale niega todo lo que no se acepte explicitamente.
   # Sin este archivo Headscale corre allow-all y cualquier nodo alcanza todo lo
   # que los subnet routers anuncien.
+  # Headscale matchea los miembros de un grupo contra el NOMBRE del usuario, no
+  # contra un email: en v0.23 la tabla users solo tiene `name`. Con
+  # strip_email_domain = false el nombre que genera OIDC es el email con la @
+  # cambiada por punto (randy.goz@dropstat.com -> randy.goz.dropstat.com), asi
+  # que hay que aplicar la misma normalizacion o el grupo queda vacio.
+  devops_users = [for m in var.devops_members : replace(m, "@", ".")]
+
   acl_policy = jsonencode({
     groups = {
-      "group:devops" = var.devops_members
+      "group:devops" = local.devops_users
     }
     acls = concat(
       # prod: solo devops
