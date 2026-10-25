@@ -19,6 +19,17 @@ variable "ami_ssm_parameter" {
   default     = "/dropstat/headscale/ami-id"
 }
 
+variable "oidc_session_expiry" {
+  description = <<-EOT
+    Cuanto vale una sesion autenticada por OIDC antes de pedir login otra vez.
+    Es global al servidor: no se puede diferenciar por ambiente, asi que el
+    valor es el que pide prod. Cambiarlo RECREA la instancia (va en el
+    user_data). "0" desactiva la expiracion.
+  EOT
+  type        = string
+  default     = "4h"
+}
+
 variable "tags" {
   type    = map(string)
   default = {}

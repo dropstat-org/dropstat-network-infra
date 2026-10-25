@@ -416,6 +416,16 @@ oidc:
   allowed_domains:
     - dropstat.com
   strip_email_domain: false
+
+  # Cuanto vale una sesion antes de pedir login OIDC de nuevo.
+  #
+  # Es un valor por SERVIDOR, no por destino: un nodo tiene la key valida o no
+  # la tiene, y la ACL decide a donde llega. No se puede pedir 4h para prod y
+  # 8h para dev con un solo control plane, asi que manda el mas estricto.
+  #
+  # No afecta a los routers: se registran con preauth keys, no por OIDC, y las
+  # rutas de subnet no se renuevan cada ${var.oidc_session_expiry}.
+  expiry: ${var.oidc_session_expiry}
 HSCFG
 
 # ── ACL policy ────────────────────────────────────────────
