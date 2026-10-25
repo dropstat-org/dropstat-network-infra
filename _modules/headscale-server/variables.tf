@@ -9,6 +9,16 @@ variable "instance_type" {
   default     = "t3.small"
 }
 
+variable "ami_ssm_parameter" {
+  description = <<-EOT
+    Parametro de SSM que guarda el id del AMI de Headscale. Lo escribe el
+    workflow build-headscale-ami.yml de dropstat-aws-runner-ami-deploy.
+    Cambiar su valor reemplaza la instancia en el proximo apply.
+  EOT
+  type        = string
+  default     = "/dropstat/headscale/ami-id"
+}
+
 variable "tags" {
   type    = map(string)
   default = {}
