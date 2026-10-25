@@ -1,7 +1,17 @@
 variable "role_name" {
-  description = "Nombre del rol IAM que asume GitHub Actions."
+  description = <<-EOT
+    Nombre del rol IAM que asume GitHub Actions. Tiene que empezar con
+    `dropstat-`: la policy de TerraformCI acota sus permisos de IAM a
+    arn:aws:iam::*:role/dropstat-*, asi que cualquier otro nombre da
+    AccessDenied en el apply.
+  EOT
   type        = string
-  default     = "GHA-HeadscaleAmi-network"
+  default     = "dropstat-gha-headscale-ami"
+
+  validation {
+    condition     = startswith(var.role_name, "dropstat-")
+    error_message = "role_name debe empezar con `dropstat-` para caer dentro del alcance de TerraformCI."
+  }
 }
 
 variable "github_org" {
