@@ -299,6 +299,14 @@ module "ec2" {
 #!/bin/bash
 set -e
 
+# Reintentos para las descargas de binarios desde internet. El script corre con
+# `set -e`, asi que un corte aca deja la instancia arriba pero sin headscale ni
+# caddy instalados, el control plane caido y nada que lo reponga: el server no
+# esta en un ASG. Paso el 2026-10-25 con un `curl: (56) Recv failure` bajando el
+# binario de Headscale. --retry-all-errors es lo que cubre ese caso concreto:
+# --retry solo reintenta errores de conexion, no un transfer cortado a mitad.
+RETRY_OPTS="--retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 10 --max-time 300"
+
 IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 REGION=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
 
@@ -311,7 +319,7 @@ OIDC_CLIENT_SECRET=$(echo "$OIDC_JSON" | python3 -c "import sys,json; d=json.loa
 
 # ── Instalar Headscale (binario — no hay paquete .rpm) ───────────────────
 HEADSCALE_VERSION="0.23.0"
-curl -fsSLo /usr/local/bin/headscale \
+curl -fsSL $RETRY_OPTS -o /usr/local/bin/headscale \
   "https://github.com/juanfont/headscale/releases/download/v$HEADSCALE_VERSION/headscale_$${HEADSCALE_VERSION}_linux_amd64"
 chmod +x /usr/local/bin/headscale
 
@@ -423,7 +431,7 @@ ACLEOF
 chown -R headscale:headscale /etc/headscale
 
 # ── Instalar Caddy (reverse proxy HTTPS) ──────────────────────────────────
-curl -fsSLo /tmp/caddy.tar.gz \
+curl -fsSL $RETRY_OPTS -o /tmp/caddy.tar.gz \
   "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.tar.gz"
 tar -xzf /tmp/caddy.tar.gz -C /usr/local/bin caddy
 chmod +x /usr/local/bin/caddy
