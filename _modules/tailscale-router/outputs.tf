@@ -17,3 +17,8 @@ output "launch_template_id" {
   description = "ID del launch template"
   value       = aws_launch_template.tailscale.id
 }
+
+output "security_group_id" {
+  description = "SG del router - usarlo como origen al autorizar en SGs ajenos"
+  value       = module.sg.security_group_id
+}
