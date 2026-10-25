@@ -491,6 +491,108 @@ headscale users create ${var.router_user} 2>/dev/null || true
 headscale users create vpn 2>/dev/null || true
 %{ endif ~}
 
+# ── Reclamar la flag Primary de las rutas ─────────────────────────────────
+#
+# Cuando se reemplaza esta instancia, los routers vuelven a registrarse pero
+# las filas de ruta viejas siguen en la db.sqlite del EBS, apuntando al node
+# record anterior. Ese node queda offline para siempre y se queda con la flag
+# Primary. Sin nadie que la tenga vigente, los clientes NO instalan la ruta:
+# la VPN deja de llegar a esas subnets aunque el router este sano.
+#
+# Paso el 2026-10-25: las cinco rutas de prod (172.31.1-5.0/24) quedaron en
+# Primary = false y prod se volvio inalcanzable. El sintoma enganosa: el
+# router se ve "online" con un Last seen viejo y todo parece normal.
+#
+# El disable/enable fuerza a headscale a re-evaluar el failover y asignarle
+# Primary a un node conectado. Solo se toca un prefijo si NINGUNA de sus
+# filas tiene Primary: si ya hay una, es failover legitimo y no se interfiere.
+#
+# Va como timer y no como paso de arranque porque los routers se re-registran
+# DESPUES de que el server esta arriba: al terminar el user_data todavia no
+# hay rutas que arreglar. El timer tambien cubre los reemplazos de router.
+cat > /usr/local/bin/headscale-primary-reconcile << 'RECONCILEEOF'
+#!/usr/bin/python3
+import collections
+import json
+import subprocess
+import sys
+
+HS = "/usr/local/bin/headscale"
+
+
+def routes():
+    out = subprocess.run(
+        [HS, "routes", "list", "-o", "json"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    # La salida JSON de protobuf omite los booleanos en false, asi que todo
+    # chequeo va con .get(k, False) y no con indexado directo.
+    return json.loads(out) or []
+
+
+def main():
+    by_prefix = collections.defaultdict(list)
+    for r in routes():
+        if r.get("advertised") and r.get("enabled"):
+            by_prefix[r["prefix"]].append(r)
+
+    orphaned = []
+    for prefix, rows in by_prefix.items():
+        if any(r.get("is_primary") for r in rows):
+            continue
+        for r in rows:
+            rid = str(r["id"])
+            subprocess.run([HS, "routes", "disable", "-r", rid],
+                           capture_output=True, check=False)
+            subprocess.run([HS, "routes", "enable", "-r", rid],
+                           capture_output=True, check=False)
+        orphaned.append(prefix)
+
+    if not orphaned:
+        return 0
+
+    recovered = {r["prefix"] for r in routes() if r.get("is_primary")}
+    rc = 0
+    for prefix in orphaned:
+        if prefix in recovered:
+            print("reclaimed Primary for %s" % prefix)
+        else:
+            print("STILL ORPHANED: %s" % prefix, file=sys.stderr)
+            rc = 1
+    return rc
+
+
+sys.exit(main())
+RECONCILEEOF
+chmod 0755 /usr/local/bin/headscale-primary-reconcile
+
+cat > /etc/systemd/system/headscale-primary-reconcile.service << 'RECONCILEUNITEOF'
+[Unit]
+Description=Reclaim orphaned Primary flags on Headscale subnet routes
+After=headscale.service
+Requires=headscale.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/headscale-primary-reconcile
+RECONCILEUNITEOF
+
+cat > /etc/systemd/system/headscale-primary-reconcile.timer << 'RECONCILETIMEREOF'
+[Unit]
+Description=Reclaim orphaned Primary flags on Headscale subnet routes
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=120
+AccuracySec=10
+
+[Install]
+WantedBy=timers.target
+RECONCILETIMEREOF
+
+systemctl daemon-reload
+systemctl enable --now headscale-primary-reconcile.timer
+
 echo "Headscale ready at https://$PUBLIC_IP"
 EOF
   )
