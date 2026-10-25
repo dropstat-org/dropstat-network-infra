@@ -200,6 +200,19 @@ resource "aws_launch_template" "tailscale" {
     echo 'net.ipv6.conf.all.forwarding = 1'  >> /etc/sysctl.d/99-tailscale.conf
     sysctl -p /etc/sysctl.d/99-tailscale.conf
 
+    # Swap antes de instalar: el install de Tailscale corre `yum install` y el
+    # repo de AL2023 carga ~86MB de metadata, que en t3.nano (512MB, ~419
+    # usables) mata al proceso por OOM y deja la instancia sin tailscaled.
+    # Esto no se veia porque los routers llevaban meses arriba: se rompia solo
+    # al reponer la instancia, o sea justo cuando el ASG tenia que servir.
+    if ! swapon --show | grep -q /swapfile; then
+      dd if=/dev/zero of=/swapfile bs=1M count=1024 status=none
+      chmod 600 /swapfile
+      mkswap /swapfile >/dev/null
+      swapon /swapfile
+      echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    fi
+
     # Instalar Tailscale (cliente — compatible con Headscale)
     curl -fsSL https://tailscale.com/install.sh | sh
 
