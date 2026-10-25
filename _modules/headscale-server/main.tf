@@ -58,9 +58,25 @@ locals {
   # que hay que aplicar la misma normalizacion o el grupo queda vacio.
   devops_users = [for m in var.devops_members : replace(m, "@", ".")]
 
+  # autoApprovers aprueba las rutas que anuncia un subnet router sin pasar por
+  # `headscale routes enable`. Importa porque el router corre en un ASG: cuando
+  # la instancia se repone el nodo es nuevo y las rutas vuelven a quedar sin
+  # aprobar, o sea que el acceso se cae hasta que alguien corra el comando a
+  # mano. Esto no relaja nada: quien restringe el acceso es el bloque acls de
+  # abajo; aprobar una ruta solo habilita al router a anunciar ese CIDR.
+  # El match es por el DUEÑO del nodo, no por grupo de acceso: el router se
+  # registra con preauth key de var.router_user, asi que va ese usuario y no
+  # group:devops.
+  auto_approved_routes = {
+    for c in concat(var.prod_cidrs, var.nonprod_cidrs) : c => [var.router_user]
+  }
+
   acl_policy = jsonencode({
     groups = {
       "group:devops" = local.devops_users
+    }
+    autoApprovers = {
+      routes = local.auto_approved_routes
     }
     acls = concat(
       # prod: solo devops
