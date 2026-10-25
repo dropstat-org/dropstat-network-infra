@@ -15,8 +15,10 @@
 #
 # Post-apply:
 #   1. Cargar auth key: aws secretsmanager put-secret-value --secret-id <name> --secret-string "tskey-auth-XXX"
-#   2. Aprobar rutas en el Headscale propio (no en admin.tailscale.com):
-#      headscale routes list && headscale routes enable -r <route-id>
+#   2. Las rutas se aprueban solas: los CIDRs anunciados estan en
+#      autoApprovers de la policy (ver _modules/headscale-server). Verificar
+#      con `headscale routes list`; solo hace falta `routes enable -r <id>` si
+#      se anuncia un CIDR que no esta declarado ahi.
 # ============================================================
 
 # tm-aws-account-data resuelve SIEMPRE la cuenta network. Solo se consulta
