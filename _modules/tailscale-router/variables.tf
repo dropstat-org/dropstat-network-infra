@@ -63,3 +63,19 @@ variable "forward_cidrs" {
   type        = list(string)
   default     = ["10.0.0.0/8"]
 }
+
+variable "grant_ingress_from_router" {
+  description = <<-DESC
+    SGs preexistentes que deben aceptar trafico desde el SG del router. Cada
+    entrada agrega una regla de ingress en ESE SG con el del router como origen.
+    Los IDs son literales: esos SGs no los maneja este modulo.
+  DESC
+  type = list(object({
+    security_group_id = string
+    from_port         = number
+    to_port           = number
+    protocol          = string
+    description       = string
+  }))
+  default = []
+}

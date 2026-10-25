@@ -164,6 +164,30 @@ module "sg" {
   tags = local.tags
 }
 
+# -- Ingress en SGs ajenos -----------------------------------------------------
+# El router hace SNAT de las rutas que anuncia (--snat-subnet-routes es true por
+# defecto), asi que los paquetes llegan al destino con la IP de la ENI del router
+# y no con la IP del cliente de la tailnet. Eso permite autorizar por SG en vez
+# de abrir un CIDR: el origen es este SG, no 100.64.0.0/10.
+#
+# Los SGs destino NO los maneja este modulo -- son recursos preexistentes que se
+# referencian por ID literal. Terraform solo agrega la regla; si el SG se borra
+# por fuera, el apply falla y hay que sacar la entrada de la lista.
+resource "aws_security_group_rule" "grant_ingress" {
+  for_each = {
+    for g in var.grant_ingress_from_router :
+    "${g.security_group_id}-${g.protocol}-${g.from_port}" => g
+  }
+
+  type                     = "ingress"
+  security_group_id        = each.value.security_group_id
+  source_security_group_id = module.sg.security_group_id
+  from_port                = each.value.from_port
+  to_port                  = each.value.to_port
+  protocol                 = each.value.protocol
+  description              = each.value.description
+}
+
 # ── AMI — Amazon Linux 2023 ───────────────────────────────────────────────────
 
 data "aws_ami" "al2023" {
