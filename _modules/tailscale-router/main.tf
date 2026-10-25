@@ -10,15 +10,32 @@
 #   da failover real, Tailscale elige entre routers que anuncian lo mismo.
 #   advertise_routes decide el alcance; ver la variable.
 #
-# Auth: Tailscale auth key en Secrets Manager (reusable, sin expiración)
-# Acceso: SSM Session Manager — sin key pair, sin SSH, sin inbound
+# Auth: preauth key de Headscale en Secrets Manager. La key DEBE crearse
+#   ephemeral (--ephemeral): el ASG reemplaza la instancia en cada cambio de
+#   user_data, y cada replace registra un nodo nuevo. Con keys normales los
+#   nodos muertos quedan para siempre -- el hostname colisiona y Headscale le
+#   pega un sufijo random -- y el flag Primary de la ruta se queda en el nodo
+#   caido, sin failover automatico: hay que moverlo a mano con
+#   `headscale routes disable -r <id>` sobre la ruta vieja. Con --ephemeral el
+#   nodo se borra solo al desconectar (ephemeral_node_inactivity_timeout en la
+#   config del server) y el Primary pasa al nodo vivo sin intervencion.
+# Acceso: SSM Session Manager - sin key pair, sin SSH, sin inbound
 #
 # Post-apply:
-#   1. Cargar auth key: aws secretsmanager put-secret-value --secret-id <name> --secret-string "tskey-auth-XXX"
+#   1. Crear la key y cargarla ANTES de que arranque la instancia. Con el
+#      secret vacio `tailscale up` no falla: se queda colgado, cloud-init
+#      nunca termina y el nodo no registra nunca.
+#        headscale preauthkeys create -u routers --reusable --ephemeral --expiration 2160h
+#        aws secretsmanager put-secret-value --secret-id <secret_name output> --secret-string "<key>"
 #   2. Las rutas se aprueban solas: los CIDRs anunciados estan en
 #      autoApprovers de la policy (ver _modules/headscale-server). Verificar
 #      con `headscale routes list`; solo hace falta `routes enable -r <id>` si
 #      se anuncia un CIDR que no esta declarado ahi.
+#
+# La key expira: --expiration 2160h son 90 dias. Vencida, el proximo replace
+# del ASG deja el router sin registrar y sin alerta. Rotarla sigue siendo
+# trabajo manual (secrets-config, bloqueado por el rol TerraformCI en
+# management).
 # ============================================================
 
 # tm-aws-account-data resuelve SIEMPRE la cuenta network. Solo se consulta
@@ -52,11 +69,11 @@ locals {
 # Cargar manualmente después del apply:
 #   aws secretsmanager put-secret-value \
 #     --secret-id <secret_name output> \
-#     --secret-string "tskey-auth-XXXXXXXX"
+#     --secret-string "<key de headscale preauthkeys create --reusable --ephemeral>"
 
 resource "aws_secretsmanager_secret" "authkey" {
   name                    = "${var.name}/tailscale/auth-key"
-  description             = "Tailscale reusable auth key for subnet routers. No expiry."
+  description             = "Headscale reusable ephemeral preauth key for subnet routers - see module header"
   recovery_window_in_days = 0
   tags                    = local.tags
 }

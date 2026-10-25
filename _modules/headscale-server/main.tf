@@ -376,6 +376,13 @@ derp:
     - https://controlplane.tailscale.com/derpmap/default
 
 disable_check_updates: true
+# Cuanto espera el server antes de borrar un nodo ephemeral desconectado. Los
+# routers se registran con keys ephemeral para no dejar nodos muertos
+# acumulados (ver _modules/tailscale-router). Esta ventana es el trade-off: muy
+# corta y un corte de red transitorio borra el router y con el su ruta Primary;
+# muy larga y el nodo viejo sigue colisionando el hostname del nuevo durante el
+# replace del ASG. 30m cubre un replace completo con margen, y el sufijo random
+# del hostname mientras tanto es cosmetico.
 ephemeral_node_inactivity_timeout: 30m
 
 database:
