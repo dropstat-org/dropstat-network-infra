@@ -44,9 +44,15 @@ module "account" {
 locals {
   tags = merge(var.tags, { Module = "headscale-server" })
   public_subnet_ids = [for s in module.account.subnets.publics : s.id]
-  # nip.io resuelve <ip>.nip.io -> <ip>, permite a Caddy obtener un cert
-  # real de Let's Encrypt (ver docs/tls-nip-io-fix.md)
-  fqdn = "${aws_eip.headscale.public_ip}.nip.io"
+  # nip.io resuelve el nombre -> <ip>, permite a Caddy obtener un cert real de
+  # Let's Encrypt (ver docs/tls-nip-io-fix.md). Se usa la forma con guiones
+  # (52-14-172-37.nip.io) y no la forma con puntos: el rate limit de ACME que
+  # nos tumbo la VPN el 2026-10-25 es "5 certificados por set exacto de
+  # nombres en 168h", asi que el nombre con puntos quedo quemado hasta el
+  # 2026-10-26. Las dos formas resuelven a la misma IP; cambiar de forma da un
+  # identificador nuevo y por lo tanto un cert nuevo. Esto solo compra tiempo:
+  # lo que evita que vuelva a pasar es persistir el cache de Caddy (abajo).
+  fqdn = "${replace(aws_eip.headscale.public_ip, ".", "-")}.nip.io"
   # ── ACL policy (HuJSON) ─────────────────────────────────────────────────────
   # Default-deny: Headscale niega todo lo que no se acepte explicitamente.
   # Sin este archivo Headscale corre allow-all y cualquier nodo alcanza todo lo
@@ -419,9 +425,19 @@ cat > /etc/systemd/system/caddy.service << 'CADDYUNITEOF'
 [Unit]
 Description=Caddy
 After=network.target
+RequiresMountsFor=/var/lib/headscale
 
 [Service]
 Type=simple
+# Caddy guarda los certs bajo $XDG_DATA_HOME/caddy. Por defecto eso cae en el
+# disco raiz, que se pierde en cada replace de la instancia: con
+# user_data_replace_on_change = true cualquier edicion de la ACL recrea la EC2
+# y Caddy pide un cert nuevo. Cinco ediciones en una semana agotan el rate
+# limit de Let's Encrypt y el handshake TLS empieza a devolver
+# "tls: internal error", con lo cual ningun nodo puede registrarse. Apuntarlo
+# al volumen EBS hace que el cert sobreviva al replace y no se vuelva a pedir.
+Environment=XDG_DATA_HOME=/var/lib/headscale/caddy-data
+Environment=XDG_CONFIG_HOME=/var/lib/headscale/caddy-config
 ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile
 ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile
 Restart=always
@@ -432,6 +448,9 @@ WantedBy=multi-user.target
 CADDYUNITEOF
 
 mkdir -p /etc/caddy
+# Sobre el EBS, no sobre el disco raiz (ver el unit de arriba). Caddy corre
+# como root en este unit, asi que no se le cambia el dueno a headscale.
+mkdir -p /var/lib/headscale/caddy-data /var/lib/headscale/caddy-config
 
 cat > /etc/caddy/Caddyfile << CADDYEOF
 ${local.fqdn} {
