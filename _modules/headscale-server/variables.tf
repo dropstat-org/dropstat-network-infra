@@ -9,6 +9,27 @@ variable "instance_type" {
   default     = "t3.small"
 }
 
+variable "ami_ssm_parameter" {
+  description = <<-EOT
+    Parametro de SSM que guarda el id del AMI de Headscale. Lo escribe el
+    workflow build-headscale-ami.yml de dropstat-aws-runner-ami-deploy.
+    Cambiar su valor reemplaza la instancia en el proximo apply.
+  EOT
+  type        = string
+  default     = "/dropstat/headscale/ami-id"
+}
+
+variable "oidc_session_expiry" {
+  description = <<-EOT
+    Cuanto vale una sesion autenticada por OIDC antes de pedir login otra vez.
+    Es global al servidor: no se puede diferenciar por ambiente, asi que el
+    valor es el que pide prod. Cambiarlo RECREA la instancia (va en el
+    user_data). "0" desactiva la expiracion.
+  EOT
+  type        = string
+  default     = "4h"
+}
+
 variable "tags" {
   type    = map(string)
   default = {}

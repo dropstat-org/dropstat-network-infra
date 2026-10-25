@@ -264,17 +264,18 @@ resource "aws_iam_instance_profile" "headscale" {
 
 # ── AMI ───────────────────────────────────────────────────────────────────────
 
-data "aws_ami" "al2023" {
-  most_recent = true
-  owners      = ["amazon"]
-  filter {
-    name   = "name"
-    values = ["al2023-ami-2023.*-x86_64"]
-  }
-  filter {
-    name   = "state"
-    values = ["available"]
-  }
+# El AMI lo construye el repo dropstat-aws-runner-ami-deploy
+# (packer/headscale.pkr.hcl) y publica su id en este parametro. Trae horneados
+# los binarios de headscale y caddy, asi que el user_data ya no baja nada de
+# internet para arrancar.
+#
+# Antes aca habia un `data "aws_ami"` con most_recent = true sobre las imagenes
+# de Amazon Linux: cada vez que Amazon publicaba una AL2023 nueva, el proximo
+# apply reemplazaba la instancia aunque el cambio fuera en otro modulo. Paso
+# exactamente eso el 2026-10-25 con un apply que solo tocaba los routers.
+# Leer un parametro fijo deja el reemplazo atado a un build explicito del AMI.
+data "aws_ssm_parameter" "headscale_ami" {
+  name = var.ami_ssm_parameter
 }
 
 # ── EC2 ───────────────────────────────────────────────────────────────────────
@@ -285,7 +286,7 @@ module "ec2" {
 
   name          = "${var.name}-headscale-server"
   instance_type = var.instance_type
-  ami           = data.aws_ami.al2023.id
+  ami           = data.aws_ssm_parameter.headscale_ami.value
 
   # Subnet pública — necesita IP pública para que los clientes se conecten
   subnet_id                   = local.public_subnet_ids[0]
@@ -299,14 +300,9 @@ module "ec2" {
 #!/bin/bash
 set -e
 
-# Reintentos para las descargas de binarios desde internet. El script corre con
-# `set -e`, asi que un corte aca deja la instancia arriba pero sin headscale ni
-# caddy instalados, el control plane caido y nada que lo reponga: el server no
-# esta en un ASG. Paso el 2026-10-25 con un `curl: (56) Recv failure` bajando el
-# binario de Headscale. --retry-all-errors es lo que cubre ese caso concreto:
-# --retry solo reintenta errores de conexion, no un transfer cortado a mitad.
-RETRY_OPTS="--retry 5 --retry-delay 3 --retry-all-errors --connect-timeout 10 --max-time 300"
-
+# Los binarios de headscale y caddy, y el usuario de sistema headscale, vienen
+# en el AMI. Este script ya no baja nada de internet: solo arma la config y
+# arranca los servicios.
 IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 REGION=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
 
@@ -317,13 +313,12 @@ OIDC_JSON=$(aws secretsmanager get-secret-value \
 OIDC_CLIENT_ID=$(echo "$OIDC_JSON"     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('client_id',''))")
 OIDC_CLIENT_SECRET=$(echo "$OIDC_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('client_secret',''))")
 
-# ── Instalar Headscale (binario — no hay paquete .rpm) ───────────────────
-HEADSCALE_VERSION="0.23.0"
-curl -fsSL $RETRY_OPTS -o /usr/local/bin/headscale \
-  "https://github.com/juanfont/headscale/releases/download/v$HEADSCALE_VERSION/headscale_$${HEADSCALE_VERSION}_linux_amd64"
-chmod +x /usr/local/bin/headscale
-
-useradd --system --no-create-home --shell /usr/sbin/nologin headscale 2>/dev/null || true
+# El binario y el usuario los provee el AMI. Si falta alguno de los dos, el
+# AMI es el equivocado y es mejor cortar aca que dejar el servicio en crash
+# loop sin explicacion.
+test -x /usr/local/bin/headscale
+test -x /usr/local/bin/caddy
+id headscale >/dev/null
 
 cat > /etc/systemd/system/headscale.service << 'UNITEOF'
 [Unit]
@@ -421,6 +416,16 @@ oidc:
   allowed_domains:
     - dropstat.com
   strip_email_domain: false
+
+  # Cuanto vale una sesion antes de pedir login OIDC de nuevo.
+  #
+  # Es un valor por SERVIDOR, no por destino: un nodo tiene la key valida o no
+  # la tiene, y la ACL decide a donde llega. No se puede pedir 4h para prod y
+  # 8h para dev con un solo control plane, asi que manda el mas estricto.
+  #
+  # No afecta a los routers: se registran con preauth keys, no por OIDC, y las
+  # rutas de subnet no se renuevan cada ${var.oidc_session_expiry}.
+  expiry: ${var.oidc_session_expiry}
 HSCFG
 
 # ── ACL policy ────────────────────────────────────────────
@@ -430,12 +435,7 @@ ACLEOF
 
 chown -R headscale:headscale /etc/headscale
 
-# ── Instalar Caddy (reverse proxy HTTPS) ──────────────────────────────────
-curl -fsSL $RETRY_OPTS -o /tmp/caddy.tar.gz \
-  "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.tar.gz"
-tar -xzf /tmp/caddy.tar.gz -C /usr/local/bin caddy
-chmod +x /usr/local/bin/caddy
-
+# ── Caddy (reverse proxy HTTPS) — el binario viene en el AMI ──────────────
 cat > /etc/systemd/system/caddy.service << 'CADDYUNITEOF'
 [Unit]
 Description=Caddy
