@@ -72,6 +72,12 @@ locals {
   # que hay que aplicar la misma normalizacion o el grupo queda vacio.
   devops_users = [for m in var.devops_members : replace(m, "@", ".")]
 
+  # Mismo criterio para el grupo que solo necesita la base de prod. Es un grupo
+  # aparte y no una variante de devops_members porque la regla de prod abre
+  # TODOS los puertos de los prod_cidrs: meter a alguien ahi para que llegue a
+  # la base le da ALB, ECS y SSH de paso.
+  prod_db_users = [for m in var.prod_db_members : replace(m, "@", ".")]
+
   # autoApprovers aprueba las rutas que anuncia un subnet router sin pasar por
   # `headscale routes enable`. Importa porque el router corre en un ASG: cuando
   # la instancia se repone el nodo es nuevo y las rutas vuelven a quedar sin
@@ -86,9 +92,14 @@ locals {
   }
 
   acl_policy = jsonencode({
-    groups = {
-      "group:devops" = local.devops_users
-    }
+    groups = merge(
+      {
+        "group:devops" = local.devops_users
+      },
+      length(local.prod_db_users) > 0 ? {
+        "group:prod-db" = local.prod_db_users
+      } : {},
+    )
     autoApprovers = {
       routes = local.auto_approved_routes
     }
@@ -98,6 +109,14 @@ locals {
         action = "accept"
         src    = ["group:devops"]
         dst    = [for c in var.prod_cidrs : "${c}:*"]
+      }] : [],
+      # prod, solo la base: puertos de var.prod_db_ports y nada mas. El dst va
+      # por CIDR y no por IP porque la IP privada de una instancia RDS cambia en
+      # un failover o un reemplazo, y la ACL quedaria apuntando a la nada.
+      length(var.prod_cidrs) > 0 && length(local.prod_db_users) > 0 ? [{
+        action = "accept"
+        src    = ["group:prod-db"]
+        dst    = flatten([for c in var.prod_cidrs : [for p in var.prod_db_ports : "${c}:${p}"]])
       }] : [],
       # no-prod: cualquier usuario autenticado
       length(var.nonprod_cidrs) > 0 ? [{

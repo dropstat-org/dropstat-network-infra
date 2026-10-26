@@ -80,8 +80,29 @@ variable "devops_members" {
   type        = list(string)
 }
 
+variable "prod_db_members" {
+  description = <<-DESC
+    Emails de quienes alcanzan SOLO la base de datos de prod: los prod_cidrs
+    limitados a prod_db_ports, sin el resto de los puertos. Misma normalizacion
+    de nombre que devops_members y el mismo requisito de un login OIDC previo.
+
+    Vacio por default: el grupo y su regla no se emiten si no hay miembros, asi
+    que el ACL queda igual al de antes. El default existe tambien porque el
+    deploy referencia el modulo con ref=main - hacerla obligatoria rompe el plan
+    entre el merge de este cambio y el que pasa el input.
+  DESC
+  type        = list(string)
+  default     = []
+}
+
+variable "prod_db_ports" {
+  description = "Puertos que abre group:prod-db sobre prod_cidrs. MySQL por default."
+  type        = list(string)
+  default     = ["3306"]
+}
+
 variable "prod_cidrs" {
-  description = "CIDRs de prod. Solo devops_members los alcanza."
+  description = "CIDRs de prod. Todos los puertos solo para devops_members; prod_db_members los alcanza acotado a prod_db_ports."
   type        = list(string)
   default     = []
 }
