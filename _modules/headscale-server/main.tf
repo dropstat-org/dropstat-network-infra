@@ -44,15 +44,23 @@ module "account" {
 locals {
   tags = merge(var.tags, { Module = "headscale-server" })
   public_subnet_ids = [for s in module.account.subnets.publics : s.id]
-  # nip.io resuelve el nombre -> <ip>, permite a Caddy obtener un cert real de
-  # Let's Encrypt (ver docs/tls-nip-io-fix.md). Se usa la forma con guiones
-  # (52-14-172-37.nip.io) y no la forma con puntos: el rate limit de ACME que
-  # nos tumbo la VPN el 2026-10-25 es "5 certificados por set exacto de
-  # nombres en 168h", asi que el nombre con puntos quedo quemado hasta el
-  # 2026-10-26. Las dos formas resuelven a la misma IP; cambiar de forma da un
-  # identificador nuevo y por lo tanto un cert nuevo. Esto solo compra tiempo:
-  # lo que evita que vuelva a pasar es persistir el cache de Caddy (abajo).
-  fqdn = "${replace(aws_eip.headscale.public_ip, ".", "-")}.nip.io"
+  # FQDN del control plane: nombre del cert de Caddy, --login-server de los
+  # nodos y host del callback OIDC, los tres a la vez.
+  #
+  # domain_name seteado = nombre propio, servido por la zona que crea el modulo
+  # vpn-dns y delegada desde GoDaddy (el apex dropstat.com vive ahi). Esto
+  # desacopla las tres cosas de la EIP: el 2026-10-25 un cambio de IP las
+  # desalineo y dejo a todos afuera con error=redirect_mismatch. Antes de
+  # setearlo, la delegacion NS tiene que existir y el nombre resolver desde
+  # afuera a la EIP; adelantarlo deja a Caddy sin completar el ACME y tira la
+  # VPN.
+  #
+  # vacio = forma anterior, derivada de la EIP via nip.io. Se usa la variante
+  # con guiones (52-14-172-37.nip.io) y no la de puntos: el rate limit de ACME
+  # es "5 certificados por set exacto de nombres en 168h" y la forma con puntos
+  # quedo quemada el 2026-10-25, cuando tumbo la VPN. Lo que evita que vuelva a
+  # pasar es persistir el cache de Caddy (abajo).
+  fqdn = var.domain_name != "" ? var.domain_name : "${replace(aws_eip.headscale.public_ip, ".", "-")}.nip.io"
   # ── ACL policy (HuJSON) ─────────────────────────────────────────────────────
   # Default-deny: Headscale niega todo lo que no se acepte explicitamente.
   # Sin este archivo Headscale corre allow-all y cualquier nodo alcanza todo lo

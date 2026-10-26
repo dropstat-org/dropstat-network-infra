@@ -30,6 +30,28 @@ variable "oidc_session_expiry" {
   default     = "4h"
 }
 
+variable "domain_name" {
+  description = <<-DESC
+    FQDN del control plane. Es el nombre del cert de Caddy, el --login-server
+    contra el que se registran los nodos y el host del callback OIDC, asi que
+    cambiarlo RECREA la instancia (va en el user_data) y obliga a Caddy a pedir
+    un cert nuevo: el cache del EBS no cubre un nombre que nunca tuvo.
+
+    Antes de cambiarlo, la delegacion NS tiene que existir y el nombre tiene que
+    resolver desde afuera a la EIP. Si no resuelve, el ACME no completa, Caddy
+    se queda sin cert y ningun nodo puede registrarse. El mismo valor va en
+    headscale_url de dropstat-aws-sso, o el login OIDC falla con
+    redirect_mismatch.
+
+    Vacio = se deriva de la EIP via nip.io, la forma anterior. Es el default
+    solo porque el deploy referencia este modulo con ref=main: hacerla
+    obligatoria rompe el plan del deploy entre que mergea este PR y el que
+    pasa el input. Una vez que el deploy lo setea, el default se saca.
+  DESC
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   type    = map(string)
   default = {}
