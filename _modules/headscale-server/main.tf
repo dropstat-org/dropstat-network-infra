@@ -190,13 +190,11 @@ module "sg" {
       cidr_blocks = "0.0.0.0/0"
       description = "STUN - NAT traversal para WireGuard"
     },
-    {
-      from_port   = 80
-      to_port     = 80
-      protocol    = "tcp"
-      cidr_blocks = "0.0.0.0/0"
-      description = "HTTP - Lets Encrypt ACME HTTP-01 challenge"
-    },
+    # Sin ingress en el 80: el control plane solo se habla por HTTPS. Los nodos
+    # nunca usan el 80 - ahi Caddy solo devolvia un 308 al 443. El ACME se
+    # valida por tls-alpn-01, sobre el 443 (ver el Caddyfile del user_data);
+    # cerrar el 80 sin desactivar el http challenge deja a Caddy sin poder
+    # renovar y la VPN se cae al vencer el cert.
     {
       from_port   = -1
       to_port     = -1
@@ -468,7 +466,19 @@ mkdir -p /etc/caddy
 mkdir -p /var/lib/headscale/caddy-data /var/lib/headscale/caddy-config
 
 cat > /etc/caddy/Caddyfile << CADDYEOF
+{
+  # El 80 esta cerrado en el security group, asi que no hay redirect que
+  # servir ni challenge HTTP-01 que completar. Sin esto Caddy intenta
+  # escuchar en el 80 y usar HTTP-01 primero, y el ACME queda colgado.
+  auto_https disable_redirects
+}
+
 ${local.fqdn} {
+  tls {
+    issuer acme {
+      disable_http_challenge
+    }
+  }
   reverse_proxy localhost:8080
 }
 CADDYEOF
