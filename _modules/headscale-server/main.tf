@@ -78,6 +78,11 @@ locals {
   # la base le da ALB, ECS y SSH de paso.
   prod_db_users = [for m in var.prod_db_members : replace(m, "@", ".")]
 
+  scoped_access_groups = {
+    for name, g in var.scoped_access : "group:${name}" => [for m in g.members : replace(m, "@", ".")]
+    if length(g.members) > 0
+  }
+
   # autoApprovers aprueba las rutas que anuncia un subnet router sin pasar por
   # `headscale routes enable`. Importa porque el router corre en un ASG: cuando
   # la instancia se repone el nodo es nuevo y las rutas vuelven a quedar sin
@@ -99,6 +104,7 @@ locals {
       length(local.prod_db_users) > 0 ? {
         "group:prod-db" = local.prod_db_users
       } : {},
+      local.scoped_access_groups,
     )
     autoApprovers = {
       routes = local.auto_approved_routes
@@ -118,6 +124,11 @@ locals {
         src    = ["group:prod-db"]
         dst    = flatten([for c in var.prod_cidrs : [for p in var.prod_db_ports : "${c}:${p}"]])
       }] : [],
+      [for name, g in var.scoped_access : {
+        action = "accept"
+        src    = ["group:${name}"]
+        dst    = g.destinations
+      } if length(g.members) > 0],
       # no-prod: cualquier usuario autenticado
       length(var.nonprod_cidrs) > 0 ? [{
         action = "accept"

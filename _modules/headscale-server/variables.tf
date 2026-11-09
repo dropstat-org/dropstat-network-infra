@@ -101,6 +101,24 @@ variable "prod_db_ports" {
   default     = ["3306"]
 }
 
+variable "scoped_access" {
+  description = <<-DESC
+    Grupos con acceso puntual a destinos especificos (host:puerto), para casos
+    que no calzan con devops ni prod-db, por ejemplo un VPC endpoint de una API
+    privada. La llave es el nombre del grupo (queda como group:<llave>), members
+    usa la misma normalizacion de email que devops_members y destinations va en
+    formato Headscale ("172.31.4.81/32:443").
+
+    Vacio por default: sin entradas el ACL queda igual al de antes, y el modulo
+    se referencia con ref=main desde el deploy.
+  DESC
+  type = map(object({
+    members      = list(string)
+    destinations = list(string)
+  }))
+  default = {}
+}
+
 variable "prod_cidrs" {
   description = "CIDRs de prod. Todos los puertos solo para devops_members; prod_db_members los alcanza acotado a prod_db_ports."
   type        = list(string)
